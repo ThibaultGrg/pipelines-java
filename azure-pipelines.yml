@@ -1,49 +1,68 @@
-# Maven
-# Build your Java project and run tests with Apache Maven.
+# Maven package Java project Web App to Linux on Azure
+# Build your Java project and deploy it to Azure as a Linux web app
 # Add steps that analyze code, save build artifacts, deploy, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/languages/java
 
 trigger:
 - master
 
-stages:
-- stage: 'Build'
-  displayName: 'Build the web application'
-  jobs:
-  - job: 'Build'
-    displayName: 'Build Job'
-    pool:
-      vmImage: 'ubuntu-latest'
+variables:
 
+  # Azure Resource Manager connection created during pipeline creation
+  azureSubscription: 'c16ae92d-225c-4fd7-96b1-c7ecdfeaf7f8'
+  
+  # Web app name
+  webAppName: 'my-app-name23'
+
+  # Environment name
+  environmentName: 'my-app-name23'
+  
+  # Agent VM image name
+  vmImageName: 'ubuntu-latest'
+
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:
+  - job: MavenPackageAndPublishArtifacts
+    displayName: Maven Package and Publish Artifacts
+    pool:
+      vmImage: $(vmImageName)
+    
     steps:
     - task: Maven@3
+      displayName: 'Maven Package'
       inputs:
         mavenPomFile: 'pom.xml'
-        mavenOptions: '-Xmx3072m'
-        javaHomeOption: 'JDKVersion'
-        jdkVersionOption: '1.8'
-        jdkArchitectureOption: 'x64'
-        publishJUnitResults: true
-        testResultsFiles: '**/surefire-reports/TEST-*.xml'
-        goals: 'package'
 
-- stage: 'Dev'
-  displayName: 'Deploy to the dev environment'
+    - task: CopyFiles@2
+      displayName: 'Copy Files to artifact staging directory'
+      inputs:
+        SourceFolder: '$(System.DefaultWorkingDirectory)'
+        Contents: '**/target/*.?(war|jar)'
+        TargetFolder: $(Build.ArtifactStagingDirectory)
+
+    - upload: $(Build.ArtifactStagingDirectory)
+      artifact: drop
+
+- stage: Deploy
+  displayName: Deploy stage
   dependsOn: Build
+  condition: succeeded()
   jobs:
-  - deployment: Deploy
-    pool:
-      vmImage: 'ubuntu-latest'
-    environment: dev
+  - deployment: DeployLinuxWebApp
+    displayName: Deploy Linux Web App
+    environment: $(environmentName)
+    pool: 
+      vmImage: $(vmImageName)
     strategy:
       runOnce:
         deploy:
           steps:
-          - download: current
-            artifact: drop
           - task: AzureWebApp@1
-            displayName: 'Azure App service Deploy: website'
+            displayName: 'Azure Web App Deploy: my-app-name23'
             inputs:
-              AzureSuscription: 'Resource Manager - Tailspin - Space Game'
-              appName: '$(WebAppNameDev)'
-              package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/*.zip'
+              azureSubscription: $(azureSubscription)
+              appType: webAppLinux
+              appName: $(webAppName)
+              package: '$(Pipeline.Workspace)/drop/**/target/*.?(war|jar)'
